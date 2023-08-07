@@ -1,0 +1,11 @@
+Name: roses_3classes11_ycbcr
+Colour space: <function rgb2ycbcr at 0x7fa40ce727a0>
+Patch size: 7
+Random state: 11
+Number of classes: 3
+{0 : mold (249 train patches)}
+{1 : eggs (56 train patches)}
+{2 : healthy (700 train patches)}
+{0 : mold (20 test patches)}
+{1 : eggs (14 test patches)}
+{2 : healthy (400 test patches)}

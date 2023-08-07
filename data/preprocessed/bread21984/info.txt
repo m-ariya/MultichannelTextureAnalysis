@@ -1,0 +1,9 @@
+Name: bread21984
+Patches per image: 200
+Patch size: 15
+Random state: 1984
+Number of classes: 2
+{0 : 23}
+{1 : 26}
+Train size: 2400
+Test size: 1200

@@ -1,0 +1,9 @@
+Name: roses11_yuv
+Colour space: <function rgb2yuv at 0x7f60d4b9e440>
+Patch size: 7
+Random state: 11
+Number of classes: 2
+{0 : mold}
+{1 : healthy}
+Train size: 902 (mold: 249, healthy: 653)
+Test size: 422 (mold: 20, healthy: 402)
