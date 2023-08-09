@@ -11,10 +11,10 @@ from sklearn.metrics import accuracy_score, ConfusionMatrixDisplay
 
 from sklearn.utils import check_random_state, resample
 
-from charting import chart, map_globally
-from lvq.GCIALVQ import *
-# from lvq.CIALVQ import *
-from utils.DataManager import *
+
+from lvq.GIALVQ import *
+# from lvq.IALVQ import *
+from utils.preprocessing import *
 # import utils.ResultsManager
 import scipy.sparse.linalg as sla
 
@@ -110,9 +110,9 @@ if TRAIN:
                        [2.09054953, -1.4168473, 0.90416231, 2, ],
                        [-2.6388001, 3.41178327, -0.80259249, 1],
                        [-2.55258194, -0.23754583, -0.6898914, 2]])
-    model = CIALVQ(max_iter=200, prototypes_per_class=1, omega_rank=2, seed=11,
-                   regularization=0., omega_locality='PW',
-                   block_eye=False, norm=False, correct_imbalance=True, initial_prototypes=init_w)
+    model = IALVQ(max_iter=200, prototypes_per_class=1, omega_rank=2, seed=11,
+                  regularization=0., omega_locality='PW',
+                  block_eye=False, norm=False, correct_imbalance=True, initial_prototypes=init_w)
     model.fit(samples, labels)
     print(model.score(samples, labels))
 # l=show_lambdas(model.omegas_, class_names=[0,1,2], colors=colors, title=r'$\Lambda=\Omega^T\Omega$')
@@ -240,7 +240,7 @@ if DISCR:
 
 
 if DISCR_CHARTING:
-    from lvq.GCIALVQ import GCIALVQ
+    from lvq.GIALVQ import GCIALVQ
 
     alpha = 50
     k = 3

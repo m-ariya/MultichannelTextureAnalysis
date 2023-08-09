@@ -1,103 +1,96 @@
-import random
+"""
+Code is adapted from C++ implementation of https://github.com/JeroenLam/Research-Internship-Finding-an-optimal-dissimilarity-measure-for-hierarchical-segmentation
+"""
 
-import matplotlib.pyplot as plt
 import numpy as np
 from enum import Enum
 
-import logging
-
 from alpha_trees.EdgeQueue import EdgeQueue, Edge
-#from charting import map_globally
 
 BOTTOM = -1
+
 
 class CC_TYPE(Enum):
     BCKGRND = 0
     FRGRND = 1
     ALL = 2
 
-def differences_per_pixel_global(model, orig, patch_sz,channels=3):
+
+def differences_per_pixel_global(model, orig, patch_sz, channels=3):
     img = np.copy(orig)
     # container for patches' labels
     hor = np.ones((img.shape[0], img.shape[1] - 1)) * -1
     vert = np.ones((img.shape[0] - 1, img.shape[1])) * -1
     img = np.pad(img, ((patch_sz // 2, patch_sz // 2), (patch_sz // 2, patch_sz // 2), (0, 0)), mode='symmetric')
     patches = np.lib.stride_tricks.sliding_window_view(img, window_shape=(patch_sz, patch_sz), axis=(0, 1))
-    print(np.shape(patches))
     patches_orig = patches.reshape(-1, patch_sz * patch_sz * channels)
-
-    #patches=patches_orig
     labels, patches = model.predict(patches_orig, return_projected=True)
     for x in range(0, orig.shape[1] - 1, 1):
-                p1 = np.array([patches[orig.shape[0] * y + x] for y in range(orig.shape[0])])
-                p2 = np.array([patches[orig.shape[0] * y + x + 1] for y in range(orig.shape[0])]) # TODO check
-                hor[:, x] = np.sum((p1 - p2)**2, 1)
+        p1 = np.array([patches[orig.shape[0] * y + x] for y in range(orig.shape[0])])
+        p2 = np.array([patches[orig.shape[0] * y + x + 1] for y in range(orig.shape[0])])  # TODO check
+        hor[:, x] = np.sum((p1 - p2) ** 2, 1)
     for y in range(0, orig.shape[0] - 1, 1):
-                p1 = np.array([patches[orig.shape[1] * y + x] for x in range(orig.shape[1])])
-                p2 = np.array([patches[orig.shape[1]* (y + 1) + x] for x in range(orig.shape[1])])
-                vert[y,:] = np.sum((p1 - p2)**2, 1)
+        p1 = np.array([patches[orig.shape[1] * y + x] for x in range(orig.shape[1])])
+        p2 = np.array([patches[orig.shape[1] * (y + 1) + x] for x in range(orig.shape[1])])
+        vert[y, :] = np.sum((p1 - p2) ** 2, 1)
 
-    return hor, vert,patches_orig,labels
+    return hor, vert, patches_orig, labels
 
 
-
-def differences_per_pixel(model, orig, patch_sz, labels,channels=3, inf_value=np.inf):
+def differences_per_pixel(model, orig, patch_sz, labels, channels=3, inf_value=np.inf):
     img = np.copy(orig)
     classes = model.classes_
     # container for patches' labels
-    hor = np.ones((img.shape[0], img.shape[1]- 1)) * inf_value
+    hor = np.ones((img.shape[0], img.shape[1] - 1)) * inf_value
     vert = np.ones((img.shape[0] - 1, img.shape[1])) * inf_value
     img = np.pad(img, ((patch_sz // 2, patch_sz // 2), (patch_sz // 2, patch_sz // 2), (0, 0)), mode='symmetric')
     patches = np.lib.stride_tricks.sliding_window_view(img, window_shape=(patch_sz, patch_sz), axis=(0, 1))
     print(np.shape(patches))
-    patches = patches.reshape(-1, patch_sz*patch_sz*channels)
+    patches = patches.reshape(-1, patch_sz * patch_sz * channels)
 
     for x in range(0, labels.shape[1] - 1, 1):
         for c in classes:  # horizontal diff
             cidx = np.intersect1d(np.where(labels[:, x] == c)[0], np.where(labels[:, x + 1] == c)[0])
             if cidx.size:
                 p1 = np.array([patches[labels.shape[0] * y + x] for y in cidx])
-                p2 = np.array([patches[labels.shape[0] * y + x + 1] for y in cidx]) # TODO check
+                p2 = np.array([patches[labels.shape[0] * y + x + 1] for y in cidx])  # TODO check
                 hor[cidx, x] = model.distance(p1, p2, model.omegas_[c])
     for y in range(0, labels.shape[0] - 1, 1):
         for c in classes:  # verical diff
             cidx = np.intersect1d(np.where(labels[y, :] == c)[0], np.where(labels[y + 1, :] == c)[0])
             if cidx.size:
                 p1 = np.array([patches[labels.shape[1] * y + x] for x in cidx])
-                p2 = np.array([patches[labels.shape[1]* (y + 1) + x] for x in cidx])
-                vert[y,cidx] = model.distance(p1, p2, model.omegas_[c])
-    return hor, vert,patches
+                p2 = np.array([patches[labels.shape[1] * (y + 1) + x] for x in cidx])
+                vert[y, cidx] = model.distance(p1, p2, model.omegas_[c])
+    return hor, vert, patches
+
 
 class Node:
-    def __init__(self, parent=None, alpha=0,  area=0,patch_sz=1, channels=3):
+    def __init__(self, parent=None, alpha=0, area=0, patch_sz=1, channels=3):
         self.parent = parent  # parent index
         self.alpha = alpha
         self.label = None
         self.area = area
         self.node_indices = set()
-        self.features = np.zeros(patch_sz*patch_sz*channels)
-        self.cls=np.zeros(3)
-
-
+        self.features = np.zeros(patch_sz * patch_sz * channels)
+        self.cls = np.zeros(3)
 
     def normalize_features(self):
-        self.features = self.features/ self.area
+        self.features = self.features / self.area
 
 
 class AlphaTree:
 
-
-    def __init__(self, img,patch_sz):
+    def __init__(self, img, patch_sz):
         self.img = img
-        img_sz =  img.shape[0] * img.shape[1]
-        self.patch_sz=patch_sz
-        self.nodes = [Node(patch_sz=patch_sz) for _ in range(2*img_sz)]
+        img_sz = img.shape[0] * img.shape[1]
+        self.patch_sz = patch_sz
+        self.nodes = [Node(patch_sz=patch_sz) for _ in range(2 * img_sz)]
         self.roots = [0] * 2 * img_sz
         self.edgeq = EdgeQueue()
         self.current_sz = img_sz
 
-
-    def new_node(self,  alpha):
+    def new_node(self, alpha):
         self.nodes[self.current_sz] = Node(alpha=alpha, parent=BOTTOM, patch_sz=self.patch_sz)
         self.roots[self.current_sz] = BOTTOM
         new_idx = self.current_sz
@@ -106,18 +99,14 @@ class AlphaTree:
 
     def update_node_features(self, p, q=None):
         x, y = p % self.img.shape[1], p // self.img.shape[1]
-        if q is None: # called in make_set
-            self.nodes[p].features= self.patches[self.img[0].shape[0] * y + x]
-            self.nodes[p].cls[self.labels[self.img[0].shape[0] * y + x]] += 1 # cast a vote
+        if q is None:  # called in make_set
+            self.nodes[p].features = self.patches[self.img[0].shape[0] * y + x]
+            self.nodes[p].cls[self.labels[self.img[0].shape[0] * y + x]] += 1  # cast a vote
         else:
             self.nodes[p].features += self.nodes[q].features
             self.nodes[p].cls += self.nodes[q].cls
 
-
-
-
-
-    def phase1(self, height, width,  lmbda, alphas_h, alphas_v):
+    def phase1(self, height, width, lmbda, alphas_h, alphas_v):
         """
         Create an alpha tree based on the provided alpha values.
      these alpha values are either combined in the salience tree or
@@ -135,28 +124,28 @@ class AlphaTree:
             edge_salience = alphas_h[0, x - 1]
             if edge_salience < lmbda:  # connected
                 self.union1(x, x - 1)
-            else: # store the edge
-                self.edgeq.push(Edge(x, x-1, edge_salience))
+            else:  # store the edge
+                self.edgeq.push(Edge(x, x - 1, edge_salience))
 
         # for all other rows
-        for y in range(1,height):
-            p = y*width # p is the first pixel in a row
+        for y in range(1, height):
+            p = y * width  # p is the first pixel in a row
             self.make_set(p)
-            edge_salience = alphas_v[y-1, 0]
+            edge_salience = alphas_v[y - 1, 0]
 
             if edge_salience < lmbda:
-                self.union1(p, p-width)
+                self.union1(p, p - width)
             else:
-                self.edgeq.push(Edge(p, p-width, edge_salience))
+                self.edgeq.push(Edge(p, p - width, edge_salience))
             p += 1
             # for each column in the current row
             for x in range(1, width):
                 # repeat process in y-direction
                 self.make_set(p)
-                edge_salience = alphas_v[y-1, x]
+                edge_salience = alphas_v[y - 1, x]
 
                 if edge_salience < lmbda:
-                    self.union1(p,p-width)
+                    self.union1(p, p - width)
                 else:
                     self.edgeq.push(Edge(p, p - width, edge_salience))
                 # repeat process in x-direction
@@ -167,9 +156,6 @@ class AlphaTree:
                 else:
                     self.edgeq.push(Edge(p, p - 1, edge_salience))
                 p += 1
-
-
-
 
     def phase2(self):
         """
@@ -188,12 +174,10 @@ class AlphaTree:
                     # we combine the two nodes in a new salience node
                     r = self.new_node(current_edge.alpha)
                     self.union2(r, current_edge.p)
-                    self.union2(r, current_edge.q,)
+                    self.union2(r, current_edge.q, )
                 else:
                     # otherwise we add the lower node to the higher node
                     self.union2(current_edge.p, current_edge.q)
-
-
 
     def phase2_preset_alphas(self, alphas):
         """
@@ -203,10 +187,10 @@ class AlphaTree:
         """
         alphas = np.concatenate(([0], alphas, [np.inf]))
         alphas = np.sort(np.unique(alphas))
-        i=0
+        i = 0
         while not self.edgeq.empty() and i < len(alphas):
             current_edge = self.edgeq.pop()
-            if  current_edge.alpha <= alphas[i]:
+            if current_edge.alpha <= alphas[i]:
                 current_edge.p, current_edge.q = self.ancestors(current_edge.p, current_edge.q)
                 if current_edge.p != current_edge.q:
                     if current_edge.p < current_edge.q:
@@ -217,17 +201,14 @@ class AlphaTree:
                         # we combine the two nodes in a new salience node
                         r = self.new_node(alphas[i])
                         self.union2(r, current_edge.p)
-                        self.union2(r, current_edge.q,)
+                        self.union2(r, current_edge.q, )
                     else:
                         # otherwise we add the lower node to the higher node
                         self.union2(current_edge.p, current_edge.q)
             else:
-                i +=1
+                i += 1
         if len(self.edgeq.queue) > 0:
             raise ValueError("Level queue is non empty")
-
-
-
 
     def make_set(self, p):
         # happens for each pixel once
@@ -237,7 +218,6 @@ class AlphaTree:
         self.nodes[p].node_indices.add(p)
         self.update_node_features(p)
         self.roots[p] = BOTTOM
-
 
     def union1(self, p, q):
         """
@@ -255,16 +235,12 @@ class AlphaTree:
             self.nodes[p].node_indices.add(q)
             self.update_node_features(p, q)
 
-
-
     def union2(self, p, q):
         self.nodes[q].parent = p
         self.roots[q] = p
         self.nodes[p].area += self.nodes[q].area
         self.update_node_features(p, q)
         self.nodes[p].node_indices.add(q)
-
-
 
     def find_root1(self, p):
         r = p
@@ -276,10 +252,9 @@ class AlphaTree:
         while i != r:
             j = self.roots[i]
             self.roots[i] = r
-            self.nodes[i].parent = r # change parent in th tree to total root
-            i = j # i becomes its own root
+            self.nodes[i].parent = r  # change parent in th tree to total root
+            i = j  # i becomes its own root
         return r
-
 
     def level_root(self, p):
         """
@@ -297,7 +272,7 @@ class AlphaTree:
         while i != r:
             j = self.nodes[i].parent
             self.nodes[i].parent = r
-            i=j
+            i = j
 
         return r
 
@@ -322,14 +297,15 @@ class AlphaTree:
         """
         r = p
         while self.roots[r] != BOTTOM:
-            r= self.roots[r]
+            r = self.roots[r]
         i = p
         while i != r:
             j = self.roots[i]
             self.roots[i] = r
-            i=j
-        return  r
-    def ancestors(self, p ,q):
+            i = j
+        return r
+
+    def ancestors(self, p, q):
         # get root of each pixel and ensure correct order
         p = self.level_root(p)
         q = self.level_root(q)
@@ -348,15 +324,13 @@ class AlphaTree:
             q = self.find_root(q)
         elif self.roots[q] == BOTTOM:
             p = self.find_root(p)
-        return p,q
-
-
+        return p, q
 
     def build(self, alphas, model, labels=None, alpha_start=0):
         if labels is None:
             alphas_h, alphas_v, self.patches, self.labels = differences_per_pixel_global(model, self.img, self.patch_sz)
         else:
-            alphas_h, alphas_v,self.patches = differences_per_pixel(model, self.img, self.patch_sz, labels)
+            alphas_h, alphas_v, self.patches = differences_per_pixel(model, self.img, self.patch_sz, labels)
         # root is a separate case
         self.make_set(0)
 
@@ -369,7 +343,6 @@ class AlphaTree:
         else:
             self.phase2()
 
-
         del self.edgeq
         del self.roots
         self.nodes = self.nodes[:self.current_sz]
@@ -378,19 +351,17 @@ class AlphaTree:
         for i in range(0, self.current_sz):
             self.nodes[i].normalize_features()
 
-
-
     def filter(self, lmbda):
         """
         :param lmbda: difference between pixels is at most lmbda. Large lambda -> less details
         :return:
         """
-        if lmbda <= self.nodes[self.current_sz-1].alpha:
+        if lmbda <= self.nodes[self.current_sz - 1].alpha:
             #   Set the output value of the root
-            self.nodes[self.current_sz-1].label=0
+            self.nodes[self.current_sz - 1].label = 0
             # Set colours of the other nodes
             label = 1
-            for i in range(self.current_sz-2, -1,-1):
+            for i in range(self.current_sz - 2, -1, -1):
                 if self.is_level_root(i) and self.nodes[i].alpha >= lmbda:
                     # set the color of the level root
                     self.nodes[i].label = label
@@ -404,21 +375,20 @@ class AlphaTree:
                 self.nodes[i].label = -1
         result = np.zeros((self.img.shape[0], self.img.shape[1]))
         for i in range(self.img.shape[0] * self.img.shape[1]):
-            result[i//self.img.shape[1], i % self.img.shape[1]] = self.nodes[i].label
+            result[i // self.img.shape[1], i % self.img.shape[1]] = self.nodes[i].label
         return result
-
 
     def filter2(self, lmbda):
         """
         :param lmbda: difference between pixels is at most lmbda. Large lambda -> less details
         :return:
         """
-        if lmbda <= self.nodes[self.current_sz-1].alpha:
+        if lmbda <= self.nodes[self.current_sz - 1].alpha:
             #   Set the output value of the root
-            self.nodes[self.current_sz-1].label=self.nodes[self.current_sz-1].alpha
+            self.nodes[self.current_sz - 1].label = self.nodes[self.current_sz - 1].alpha
             # Set colours of the other nodes
 
-            for i in range(self.current_sz-2, -1,-1):
+            for i in range(self.current_sz - 2, -1, -1):
                 if self.is_level_root(i) and self.nodes[i].alpha >= lmbda:
                     # set the color of the level root
                     self.nodes[i].label = self.nodes[i].alpha
@@ -432,10 +402,8 @@ class AlphaTree:
                 self.nodes[i].label = -1
         result = np.zeros((self.img.shape[0], self.img.shape[1]))
         for i in range(self.img.shape[0] * self.img.shape[1]):
-            result[i//self.img.shape[1], i % self.img.shape[1]] = self.nodes[i].label
+            result[i // self.img.shape[1], i % self.img.shape[1]] = self.nodes[i].label
         return result
-
-
 
     def filter3(self, lmbda):
         """
@@ -467,13 +435,9 @@ class AlphaTree:
         for i in range(self.img.shape[0] * self.img.shape[1]):
             result[i // self.img.shape[1], i % self.img.shape[1]] = self.nodes[i].label
             if np.argmax(self.nodes[i].cls) > 0:
-                result[i // self.img.shape[1], i % self.img.shape[1]] += cumsum[np.argmax(self.nodes[i].cls)-1]
+                result[i // self.img.shape[1], i % self.img.shape[1]] += cumsum[np.argmax(self.nodes[i].cls) - 1]
 
         return result, cls_count
-
-
-
-
 
     def get_cc_idxs(self, cc_type=None, label=None):
         assert (cc_type is not None) ^ (label is not None)
@@ -481,37 +445,33 @@ class AlphaTree:
         if label is None:
             if cc_type == CC_TYPE.FRGRND:
                 for i in range(self.current_sz):
-                    if self.is_level_root(i) and self.nodes[i].parent != -1 and  self.nodes[i].label >= 1:
+                    if self.is_level_root(i) and self.nodes[i].parent != -1 and self.nodes[i].label >= 1:
                         node_idxs.append(i)
 
-            elif cc_type==CC_TYPE.BCKGRND: # get background components
+            elif cc_type == CC_TYPE.BCKGRND:  # get background components
                 for i in range(self.current_sz):
                     if self.is_level_root(i) and self.nodes[i].parent != -1 and self.nodes[i].label == 0:
                         node_idxs.append(i)
             else:
-                for i in range(self.current_sz): # get all CCs regardless of a label
+                for i in range(self.current_sz):  # get all CCs regardless of a label
                     if self.is_level_root(i) and self.nodes[i].parent != -1:
                         node_idxs.append(i)
         else:
             for i in range(self.current_sz):
                 if self.is_level_root(i) and self.nodes[i].label == label:
                     node_idxs.append(i)
-        return  node_idxs
+        return node_idxs
 
     def print_nodes(self, idx=None):
         if idx is None:
             idx = range(0, self.current_sz)
         for i in idx:
-            #print("[ NODE #%d ] parent: %d, alpha: %d, label: %d" % (i, self.nodes[i].parent, self.nodes[i].alpha, self.nodes[i].label))
+            # print("[ NODE #%d ] parent: %d, alpha: %d, label: %d" % (i, self.nodes[i].parent, self.nodes[i].alpha, self.nodes[i].label))
             print("[ NODE #%d ] " % (
-            i))
+                i))
             f = self.nodes[i].features
             print("area: ", self.nodes[i].area)
             print("alpha: %f" % self.nodes[i].alpha)
             print("Features: ", f)
             print(self.nodes[i].node_indices)
             print("========================")
-
-
-
-

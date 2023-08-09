@@ -1,21 +1,22 @@
 """
+Extension of IALVQ with Parametrized Angle-based distance metric
 Is based on MATLAB implementation by Kerstin Bunte (ORCID 0000-0002-2930-6172)
 """
-from lvq.CIALVQ import *
+from lvq.IALVQ import *
 
 
-class CIAALVQ(CIALVQ):
+class IAALVQ(IALVQ):
 
     def __init__(self, prototypes_per_class=1, initial_prototypes=None, initial_omegas=None, omega_rank=None,
                  max_iter=200, gtol=1e-5, regularization=0.0, seed=None, omega_locality="CW",
-                 filter_bank=None, block_eye=False, norm=False, display=False, beta=1, channel_num=3, correct_imbalance=False):
+                 filter_bank=None, block_eye=False, norm=False, beta=1, channel_num=3, correct_imbalance=False):
         """
         :param beta: controls the slope of the transformation function. Small beta leads to near-linear function
         """
         self.beta = beta
         super().__init__(prototypes_per_class, initial_prototypes, initial_omegas, omega_rank,
                          max_iter, gtol, regularization, seed, omega_locality,
-                         filter_bank, block_eye, norm, display, channel_num, correct_imbalance)
+                         filter_bank, block_eye, norm, channel_num, correct_imbalance)
 
     def _compute_distance(self, x, w=None, omegas=None):
         if w is None:
@@ -35,7 +36,7 @@ class CIAALVQ(CIALVQ):
         :return: distance between x and w using omega (and optionally a filter bank)
         """
         beta = self.beta
-        if w.ndim == 1: # computing to a single prototype
+        if w.ndim == 1:  # computing to a single prototype
             norms_w = np.linalg.norm(w.dot(omega.T * self.filter_bank))
             norms_x = np.linalg.norm(x.dot(omega.T * self.filter_bank), axis=1)
             xAw = x.dot(omega.T * self.filter_bank ** 2).dot(omega).dot(w)
@@ -113,7 +114,8 @@ class CIAALVQ(CIALVQ):
         norm_factors = 2 / (dist_j + dist_k) ** 2
 
         if self.correct_imbalance:
-            norm_factors = norm_factors * [self.cost_mat[self.labels[i], self.c_w_[idx_j[i]]] for i in range(self.nb_samples)]
+            norm_factors = norm_factors * [self.cost_mat[self.labels[i], self.c_w_[idx_j[i]]] for i in
+                                           range(self.nb_samples)]
 
         ga = []
         for i in range(self.nb_prototypes, len(variables)):
@@ -180,7 +182,7 @@ class CIAALVQ(CIALVQ):
             ga = self._enforce_block_eye(ga)
 
         # update omegas
-        g[self.nb_prototypes:] = lr_relevances *ga
+        g[self.nb_prototypes:] = lr_relevances * ga
         if self.regularization > 0:
             regmatrices = np.zeros((len(self.omegas_) * self.omega_rank, self.nb_features))
             for i, omega in enumerate(omegas):
@@ -202,13 +204,11 @@ class CIAALVQ(CIALVQ):
                """
         j = 0
         for i in range(len(omegas)):
-            if i % (self.omega_rank) == 0:
+            if i % self.omega_rank == 0:
                 j = 0
             eye = np.zeros(self.nb_features)
-            eye[j] = 1
-            eye[j + self.omega_rank] = 1
-            eye[j + 2 * self.omega_rank] = 1
-            #eye[j + 3 * self.omega_rank] = 1
+            for k in range(self.channel_num):
+                eye[j + k * self.omega_rank] = 1
             omegas[i] = omegas[i] * eye
             j = j + 1
         return omegas

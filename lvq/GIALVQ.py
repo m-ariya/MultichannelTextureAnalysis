@@ -1,7 +1,12 @@
-import numpy as np
+"""
+Globalized with charting IALVQ (with Euclidean distance!)
+Charting code is based on MATLAB implementation by Laurens van der Maaten https://lvdmaaten.github.io/drtoolbox/
+"""
 
-from lvq.CIALVQ import CIALVQ
+import numpy as np
+from lvq.IALVQ import IALVQ
 import scipy.sparse.linalg as sla
+
 
 def normalize(omega):
     nf = np.sqrt(np.trace(omega.T.dot(omega)))
@@ -12,32 +17,35 @@ def normalize(omega):
 def check_symmetric(a, rtol=1e-05, atol=1e-08):
     return np.allclose(a, a.T, rtol=rtol, atol=atol)
 
-class GCIALVQ(CIALVQ):
 
-    def __init__(self, cialvq, k=3, alpha=None, normalize_omegas=False):
+class GIALVQ(IALVQ):
 
-        super().__init__(cialvq.prototypes_per_class, cialvq.initial_prototypes, cialvq.initial_omegas, cialvq.omega_rank,
+    def __init__(self, cialvq, k=3, alpha=None, normalize_omegas=True):
+
+        super().__init__(cialvq.prototypes_per_class, cialvq.initial_prototypes, cialvq.initial_omegas,
+                         cialvq.omega_rank,
                          cialvq.max_iter, cialvq.gtol, cialvq.regularization, cialvq.seed, cialvq.omega_locality,
-                         cialvq.filter_bank, cialvq.block_eye, cialvq.norm, cialvq.display, cialvq.channel_num, cialvq.correct_imbalance)
-        self.nb_prototypes=cialvq.nb_prototypes
-        self.omegas_=cialvq.omegas_
-        self.class_weights=cialvq.class_weights
+                         cialvq.filter_bank, cialvq.block_eye, cialvq.norm, cialvq.channel_num,
+                         cialvq.correct_imbalance)
+        self.nb_prototypes = cialvq.nb_prototypes
+        self.omegas_ = cialvq.omegas_
+        self.class_weights = cialvq.class_weights
         self.samples = cialvq.samples
         self.w_ = cialvq.w_
-        self.c_w_=cialvq.c_w_
+        self.c_w_ = cialvq.c_w_
         self.classes_ = cialvq.classes_
         self.nb_samples = cialvq.nb_samples
         self.filter_bank = cialvq.filter_bank
         self.nb_classes = cialvq.nb_classes
-        self.classes_ =cialvq.classes_
-        self.labels=cialvq.labels
-        self.normalize_omegas=normalize_omegas
+        self.classes_ = cialvq.classes_
+        self.labels = cialvq.labels
+        self.normalize_omegas = normalize_omegas
         if k > self.nb_prototypes:
             raise ValueError("k should not exceed the number of prototypes %d" % self.nb_prototypes)
-        self.k=k
-        self.alpha=alpha
-        self.alphas=None
-        self.V=None
+        self.k = k
+        self.alpha = alpha
+        self.alphas = None
+        self.V = None
         self.chart()
 
     def map_locally(self, X):
@@ -83,8 +91,6 @@ class GCIALVQ(CIALVQ):
         R[:, nonzeros] = R[:, nonzeros] / col_sums[nonzeros]
         return R
 
-
-
     def chart(self):
         # ensuring that all omegas have a unit trace
         if not self.norm and self.normalize_omegas:
@@ -99,7 +105,7 @@ class GCIALVQ(CIALVQ):
                 for i in range(self.prototypes_per_class):
                     alphas[idx] = w / np.sum(self.class_weights) / self.prototypes_per_class
                     idx += 1
-        self.alphas=alphas
+        self.alphas = alphas
 
         m = self.omega_rank
         n = self.nb_prototypes
@@ -145,7 +151,7 @@ class GCIALVQ(CIALVQ):
         U = U.reshape((n * (m + 1), X.shape[0]), order='F').T
         return U.dot(self.V)
 
-    def predict(self, X, return_dist=False,return_projected=False):
+    def predict(self, X, return_dist=False, return_projected=False):
         """
         :param x: data
         :return:
@@ -165,28 +171,21 @@ class GCIALVQ(CIALVQ):
             if return_projected:
                 return self.c_w_[distance.argmin(1)], X
             else:
-                return  self.c_w_[distance.argmin(1)]
-
-
+                return self.c_w_[distance.argmin(1)]
 
     def distance(self, X, w):
         return np.sum((X - w) ** 2, 1)
 
-
-    def dist_to_protos(self, x, iqr=[75,25]):
-        _,distances =self.predict(x,True,False)
-        dist_statistics=np.zeros((self.nb_classes, self.nb_classes,3))
-        iqrs = np.zeros((self.nb_classes, self.nb_classes,2))
+    def dist_to_protos(self, x, iqr=[75, 25]):
+        _, distances = self.predict(x, True, False)
+        dist_statistics = np.zeros((self.nb_classes, self.nb_classes, 3))
+        iqrs = np.zeros((self.nb_classes, self.nb_classes, 2))
         for i in self.classes_:
-            x_i = np.where(self.labels==i)[0] # idxs of samples of class i
+            x_i = np.where(self.labels == i)[0]  # idxs of samples of class i
             for j in self.classes_:
-                w_j =  np.where(self.c_w_==j)[0] # idxs of prototypes of class j
-                dist_statistics[i, j, 0] = np.min(distances[np.ix_(x_i,w_j)])
-                dist_statistics[i, j, 1] = np.mean(distances[np.ix_(x_i,w_j)])
-                dist_statistics[i, j, 2] = np.max(distances[np.ix_(x_i,w_j)])
-                iqrs[i,j,:]=  np.percentile(distances[np.ix_(x_i,w_j)],iqr)
-                #if i==j==2:
-                    #pps = np.percentile(distances[np.ix_(x_i,w_j)],iqr)
-        return dist_statistics,iqrs
-
-
+                w_j = np.where(self.c_w_ == j)[0]  # idxs of prototypes of class j
+                dist_statistics[i, j, 0] = np.min(distances[np.ix_(x_i, w_j)])
+                dist_statistics[i, j, 1] = np.mean(distances[np.ix_(x_i, w_j)])
+                dist_statistics[i, j, 2] = np.max(distances[np.ix_(x_i, w_j)])
+                iqrs[i, j, :] = np.percentile(distances[np.ix_(x_i, w_j)], iqr)
+        return dist_statistics, iqrs

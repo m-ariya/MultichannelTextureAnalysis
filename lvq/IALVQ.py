@@ -1,18 +1,14 @@
 """
-Partially based on sklearn-lvq package: https://sklearn-lvq.readthedocs.io/en/stable/
+Image Analysis (with) Learning Vector Quantization (IALVQ)
+Code is partially based on sklearn-lvq package: https://sklearn-lvq.readthedocs.io/en/stable/
 """
 
 from __future__ import division
-
-import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.base import ClassifierMixin
-from sklearn.metrics import accuracy_score
 from sklearn.utils.multiclass import unique_labels
 from scipy.optimize import minimize
 import logging
-
-
 
 omega_nf = []
 
@@ -25,11 +21,11 @@ def closest(distances, label_equality_table):
     return d_closest, idx_closest
 
 
-class CIALVQ(ClassifierMixin):
+class IALVQ(ClassifierMixin):
 
     def __init__(self, prototypes_per_class=1, initial_prototypes=None, initial_omegas=None, omega_rank=None,
                  max_iter=200, gtol=1e-5, regularization=0.0, seed=None, omega_locality="CW",
-                 filter_bank=None, block_eye=False, norm=False, display=False, channel_num=3, correct_imbalance=False):
+                 filter_bank=None, block_eye=False, norm=False, channel_num=3, correct_imbalance=False):
         """
         :param prototypes_per_class: number of prototypes per class
         :param initial_prototypes: array-like,
@@ -46,7 +42,7 @@ class CIALVQ(ClassifierMixin):
         :param filter_bank: option filter coefficients
         :param block_eye: if True, block-identity matrix is used (for cases where rank = 1/3 of input dimensionality)
         :param norm: if True, Omegas are normalized to unit trace after each iteration
-        :param display: if True, the progress during optimizaion is printed
+        :param correct_imbalance: if True, updates are weighted based on a class sizes
         """
         self.norm = norm
         self.block_eye = block_eye
@@ -58,10 +54,9 @@ class CIALVQ(ClassifierMixin):
         self.gtol = gtol
         self.regularization = regularization
         self.initial_omegas = initial_omegas
-        self.display = display
         self.omega_rank = omega_rank
-        self.omega_locality = omega_locality #if prototypes_per_class != 1 else "PW"
-        self.channel_num=channel_num
+        self.omega_locality = omega_locality if prototypes_per_class != 1 else "PW"
+        self.channel_num = channel_num
         self.correct_imbalance = correct_imbalance
 
         self.x_val = None
@@ -69,7 +64,6 @@ class CIALVQ(ClassifierMixin):
             self.filter_bank = np.ones(self.omega_rank)[np.newaxis]
         else:
             self.filter_bank = filter_bank[np.newaxis]
-
 
     def predict(self, x, ret_dist=False):
         """Predict class membership index for each input sample.
@@ -90,7 +84,7 @@ class CIALVQ(ClassifierMixin):
                              "expected=%d" % (self.w_.shape[1], x.shape[1]))
         dist = self._compute_distance(x)
         if ret_dist:
-            return self.c_w_[dist.argmin(1)], np.min(dist,axis=1)
+            return self.c_w_[dist.argmin(1)], np.min(dist, axis=1)
         return (self.c_w_[dist.argmin(1)])
 
     def phi(self, x):
@@ -121,9 +115,6 @@ class CIALVQ(ClassifierMixin):
 
         self.nb_prototypes = self.c_w_.shape[0]
         self.c_ = np.ones((self.c_w_.size, self.c_w_.size))
-        #print(self.w_)
-        #print(self.c_w_)
-        #exit(0)
 
     def _set_omegas(self):
         self.nb_omegas = self.nb_prototypes if self.omega_locality == "PW" else self.nb_classes
@@ -137,8 +128,9 @@ class CIALVQ(ClassifierMixin):
             for omega in range(self.nb_omegas):
                 if self.block_eye:
                     eye = np.eye(self.nb_features // self.channel_num, self.nb_features // self.channel_num)
-                    omega = np.stack([eye for _ in range(self.channel_num)]).ravel().reshape(self.nb_features, self.nb_features // self.channel_num)
-                    omega = omega.T #* self.random_state.rand( self.omega_rank, self.nb_features) * 2.0 - 1.0 #
+                    omega = np.stack([eye for _ in range(self.channel_num)]).ravel().reshape(self.nb_features,
+                                                                                             self.nb_features // self.channel_num)
+                    omega = omega.T
                     if self.norm:
                         nf = np.sqrt(np.trace(omega.T.dot(omega)))
                         omega = omega / nf
@@ -186,7 +178,6 @@ class CIALVQ(ClassifierMixin):
         :param y: train labels
         :return:
         """
-
         self.samples = np.array(x)
         self.labels = np.array(y)
         self.nb_samples, self.nb_features = self.samples.shape
@@ -198,8 +189,6 @@ class CIALVQ(ClassifierMixin):
         self._set_omegas()
 
     def _validate_params(self):
-        if not isinstance(self.display, bool):
-            raise ValueError("display must be a boolean")
         if not isinstance(self.max_iter, int) or self.max_iter < 1:
             raise ValueError("max_iter must be an positive integer")
         if not isinstance(self.gtol, float) or self.gtol <= 0:
@@ -232,10 +221,10 @@ class CIALVQ(ClassifierMixin):
             self.x_val = x_val
             self.y_val = y_val
         self._validate_params()
-        self.class_weights = 1/np.bincount(y)
+        self.class_weights = 1 / np.bincount(y)
 
         self._initialize(x, y)
-        self.cost_mat = np.repeat([self.class_weights], self.nb_classes,0).T
+        self.cost_mat = np.repeat([self.class_weights], self.nb_classes, 0).T
         self.cost_mat = self.cost_mat / np.sum(self.cost_mat)
         self._optimize()
         return self
@@ -283,7 +272,8 @@ class CIALVQ(ClassifierMixin):
         norm_factors = 4 / (dist_j + dist_k) ** 2
 
         if self.correct_imbalance:
-            norm_factors = norm_factors * [self.cost_mat[self.labels[i], self.c_w_[idx_j[i]]] for i in range(self.nb_samples)]
+            norm_factors = norm_factors * [self.cost_mat[self.labels[i], self.c_w_[idx_j[i]]] for i in
+                                           range(self.nb_samples)]
 
         gw = []
         for i in range(len(omegas)):
@@ -303,8 +293,6 @@ class CIALVQ(ClassifierMixin):
 
             d_omega_filter = omegas[omega_idx].T * (self.filter_bank ** 2)
             g[i] = (mu_j.dot(d_k) - mu_k.dot(d_j)).dot(np.dot(d_omega_filter, omegas[omega_idx]))
-
-
 
             gw[omega_idx] -= (d_k * mu_j[np.newaxis].T).dot(d_omega_filter).T.dot(d_k) - \
                              (d_j * mu_k[np.newaxis].T).dot(d_omega_filter).T.dot(d_j)
@@ -334,7 +322,8 @@ class CIALVQ(ClassifierMixin):
         :return: block-identity omegas
         """
         eye = np.eye(self.nb_features // self.channel_num, self.nb_features // self.channel_num)
-        eye = np.stack([eye for _ in range(self.channel_num)]).ravel().reshape(self.nb_features, self.nb_features // self.channel_num).T
+        eye = np.stack([eye for _ in range(self.channel_num)]).ravel().reshape(self.nb_features,
+                                                                               self.nb_features // self.channel_num).T
         for i in range(len(omegas)):
             omegas[i] = omegas[i] * eye
         return omegas
@@ -368,14 +357,13 @@ class CIALVQ(ClassifierMixin):
         mu = distcorectminuswrong / distcorrectpluswrong  # per sample
 
         if self.correct_imbalance:
-            #mu = [mu[i]*self.class_weights[self.labels[i]] for i in range(self.nb_samples)]
-            mu = [mu[i]* self.cost_mat[self.labels[i], self.c_w_[idxwrong[i]]] for i in range(self.nb_samples)]
+            mu = [mu[i] * self.cost_mat[self.labels[i], self.c_w_[idxwrong[i]]] for i in range(self.nb_samples)]
 
         if self.regularization > 0:
             reg_terms = 0.5 * self.regularization * np.array([self._reg_term(omega) for omega in omegas])
-            result = np.vectorize(self.phi)(mu).sum() - np.sum(reg_terms)* 1 / self.nb_samples
+            result = np.vectorize(self.phi)(mu).sum() - np.sum(reg_terms) * 1 / self.nb_samples
         else:
-            result = np.vectorize(self.phi)(mu).sum()* 1 / self.nb_samples
+            result = np.vectorize(self.phi)(mu).sum() * 1 / self.nb_samples
         return result
 
     def _optimize(self):
@@ -391,7 +379,7 @@ class CIALVQ(ClassifierMixin):
                 lr_prototypes=1, lr_relevances=1),
             # jac='3-point',
             method='L-BFGS-B',
-            x0=variables, options={'disp': self.display, 'gtol': self.gtol,
+            x0=variables, options={'gtol': self.gtol,
                                    'maxiter': self.max_iter})
 
         out = res.x.reshape(res.x.size // self.nb_features, self.nb_features)
@@ -412,9 +400,7 @@ class CIALVQ(ClassifierMixin):
         :param omega:
         :return: distances from all samples to a prototype w using omega
         """
-        return np.sum(np.dot(x - w, omega) ** 2,1)
-
-
+        return np.sum(np.dot(x - w, omega) ** 2, 1)
 
     def distance(self, x, w, omega):
         """
@@ -424,12 +410,9 @@ class CIALVQ(ClassifierMixin):
         :param omega: transformation matrix mxn
         :return: distance between x and w using omega (and optionally a filter bank)
         """
-        if x.ndim == 1 and w.ndim==1:
+        if x.ndim == 1 and w.ndim == 1:
             return np.sum(np.dot(x - w, omega.T * self.filter_bank) ** 2)
-        return np.sum(np.dot(x - w, omega.T * self.filter_bank) ** 2,1)
-
-
-
+        return np.sum(np.dot(x - w, omega.T * self.filter_bank) ** 2, 1)
 
     def _compute_distance(self, x, w=None, omegas=None):
         """
@@ -460,13 +443,6 @@ class CIALVQ(ClassifierMixin):
 
         return np.transpose(distance)
 
-
-
-
-
-
-
-
     def project(self, X, omega):
         """
         Projects X with omega
@@ -476,7 +452,7 @@ class CIALVQ(ClassifierMixin):
         """
         return np.dot(X, omega.T)
 
-    def project2(self, x, prototype_idx, dims):
+    def project_eigen(self, x, prototype_idx, dims):
         """Projects the data input data X using the relevance matrix of the
         prototype specified by prototype_idx to dimension dim
         Parameters
@@ -502,19 +478,3 @@ class CIALVQ(ClassifierMixin):
         idx = v.argsort()[::-1]
 
         return x.dot(u[:, idx][:, :dims].dot(np.diag(np.sqrt(v[idx][:dims]))))
-
-    def global_predict(self, x, w, return_dist=False):
-        """
-        :param x: globally projected data
-        :param w: globally projected prototypes
-        :return:
-        """
-        nb_samples = x.shape[0]
-        nb_prototypes = w.shape[0]
-        distance = np.zeros([nb_prototypes, nb_samples])
-        for i in range(nb_prototypes):
-            distance[i] = np.sum((x - w[i]) ** 2, 1)
-        distance = np.transpose(distance)
-        if return_dist:
-            return self.c_w_[distance.argmin(1)], distance
-        return self.c_w_[distance.argmin(1)]
