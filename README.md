@@ -1,6 +1,8 @@
 # Multichannel Texture Analysis
 A project towards Efficient &amp; Interpretable Multichannel Texture Image Analysis with Limited Training Data (MSc Thesis, University of Groningen)
+
 Author: Mariya Shumska
+
 Supervisors: Kerstin Bunte, Michael Wilkinson
 
 ## Structure
