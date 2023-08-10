@@ -14,7 +14,18 @@ from utils.io_management import save_preprocessed_data
 def preprocess(ds_train_path, ds_test_path=None, resize_to=False, resize_shape=(128, 128),
                extract_patches=True, patch_size=15,
                n_patches=200, rnd_state=11, as_gray=False, ds_name="data"):
+
     """
+    Note, the following file structure is required:
+        data/raw/DS_NAME
+            /train
+                /CLASS_1_NAME
+                ...
+                /CLASS_N_NAME
+            /test
+                /CLASS_1_NAME
+                ...
+                /CLASS_N_NAME
     Off-line preprocessor for raw RGB images
     :param ds_test_path: path to the test data (each class should be in separate folder)
     :param ds_train_path: path to the training data (each class should be in separate folder)
